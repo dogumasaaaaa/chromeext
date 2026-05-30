@@ -3,21 +3,21 @@
 <head>
   <style>
     body {
-      width: 300px;
+      width: 320px;
       font-family: Arial, sans-serif;
-      padding: 10px;
+      padding: 12px;
       margin: 0;
       background-color: #0c0c0c; /* Amoled Black */
       color: #ffffff;
     }
     h3 { margin-top: 0; color: #00ff66; } /* Accent Green */
     .video-box {
-      border: 1px solid #333;
-      padding: 8px;
-      border-radius: 4px;
-      background: #161616;
+      border: 1px solid #222;
+      padding: 10px;
+      border-radius: 6px;
+      background: #121212;
       word-break: break-all;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
       font-size: 12px;
     }
     button {
@@ -31,16 +31,48 @@
       cursor: pointer;
     }
     button:hover { background-color: #00cc52; }
-    button:disabled { background-color: #444; color: #888; cursor: not-allowed; }
+    button:disabled { background-color: #333; color: #666; cursor: not-allowed; }
+    
+    /* Progress Bar Styling */
+    .progress-container {
+      margin-top: 12px;
+      display: none;
+    }
+    .progress-track {
+      width: 100%;
+      background-color: #222;
+      border-radius: 4px;
+      overflow: hidden;
+      height: 12px;
+    }
+    .progress-bar {
+      width: 0%;
+      height: 100%;
+      background-color: #00ff66;
+      transition: width 0.1s ease;
+    }
+    .progress-text {
+      font-size: 11px;
+      color: #888;
+      margin-top: 4px;
+      text-align: right;
+    }
   </style>
 </head>
 <body>
   <h3>Koofr Video Grabber</h3>
-  <div id="status">No video detected playing yet.</div>
+  <div id="status">Scanning browser traffic...</div>
+  
   <div id="video-info" class="video-box" style="display:none;">
-    <strong>File:</strong> <span id="filename"></span>
+    <strong>Detected Target:</strong> <span id="filename"></span>
   </div>
+  
   <button id="upload-btn" disabled>Upload directly to Koofr</button>
+
+  <div id="progress-container" class="progress-container">
+    <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
+    <div id="progress-text" class="progress-text">Processing: 0%</div>
+  </div>
 
   <script src="popup.js"></script>
 </body>
