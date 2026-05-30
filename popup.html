@@ -1,48 +1,47 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="utf-8">
   <style>
-    body { width: 250px; font-family: Arial, sans-serif; padding: 10px; margin: 0; }
-    h3 { margin-top: 0; color: #333; }
-    label { font-size: 11px; color: #666; display: block; margin-top: 8px; }
-    input { width: 100%; padding: 6px; box-sizing: border-box; margin-top: 3px; border: 1px solid #ccc; border-radius: 4px; }
-    button { width: 100%; margin-top: 12px; background: #1e88e5; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-    button:hover { background: #1565c0; }
-    .status { font-size: 11px; text-align: center; color: green; margin-top: 5px; }
+    body { width: 320px; font-family: 'Segoe UI', Arial, sans-serif; padding: 12px; margin: 0; background: #fdfdfd; }
+    h3 { margin: 0 0 10px 0; color: #222; font-size: 16px; border-bottom: 1px solid #eee; padding-bottom: 6px; }
+    .section { margin-bottom: 15px; }
+    label { font-size: 11px; color: #555; display: block; margin-top: 5px; }
+    input { width: 100%; padding: 6px; box-sizing: border-box; margin-top: 3px; border: 1px solid #ccc; border-radius: 4px; font-size: 12px; }
+    
+    .btn { background: #1e88e5; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; font-size: 13px; margin-top: 8px; }
+    .btn:hover { background: #1565c0; }
+    
+    .video-item { background: #f1f3f4; border: 1px solid #dadce0; border-radius: 6px; padding: 8px; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .video-url { font-size: 11px; color: #555; word-break: break-all; max-height: 40px; overflow: hidden; text-overflow: ellipsis; }
+    
+    .status { font-size: 12px; font-weight: bold; text-align: center; margin-top: 5px; }
+    .success { color: #2e7d32; }
+    .error { color: #c62828; }
+    .info { color: #1565c0; }
+    
+    .cred-toggle { font-size: 11px; color: #1e88e5; cursor: pointer; text-decoration: underline; margin-top: 10px; display: inline-block; }
   </style>
 </head>
 <body>
-  <h3>WebDAV Settings</h3>
-  <label>Koofr Email Address</label>
-  <input type="text" id="email" placeholder="lo.t.st.upidk..."/>
+
+  <h3>📥 Koofr Video Grabber</h3>
   
-  <label>App Password</label>
-  <input type="password" id="pass" placeholder="••••••••••••••••"/>
-  
-  <button id="saveBtn">Save Credentials</button>
-  <div class="status" id="status"></div>
+  <div class="section">
+    <div id="videoList">
+      <div class="status info">Scanning page for videos...</div>
+    </div>
+  </div>
 
-  <script>
-    const emailInput = document.getElementById('email');
-    const passInput = document.getElementById('pass');
-    const saveBtn = document.getElementById('saveBtn');
-    const status = document.getElementById('status');
+  <span class="cred-toggle" id="toggleCreds">Show/Hide Accounts Settings</span>
+  <div id="credSection" style="display: none; border-top: 1px dashed #ccc; margin-top: 10px; padding-top: 5px;">
+    <label>Koofr Email Address</label>
+    <input type="text" id="email" placeholder="Email Address"/>
+    <label>App Password</label>
+    <input type="password" id="pass" placeholder="App Password"/>
+    <button class="btn" id="saveBtn" style="font-size:11px; padding:4px;">Update Account Details</button>
+  </div>
 
-    // Load saved or display placeholder defaults
-    chrome.storage.local.get(['email', 'appPass'], (res) => {
-      if (res.email) emailInput.value = res.email;
-      if (res.appPass) passInput.value = res.appPass;
-    });
-
-    saveBtn.addEventListener('click', () => {
-      chrome.storage.local.set({
-        email: emailInput.value.trim(),
-        appPass: passInput.value.trim()
-      }, () => {
-        status.innerText = "Credentials saved successfully!";
-        setTimeout(() => status.innerText = "", 2000);
-      });
-    });
-  </script>
+  <script src="popup.js"></script>
 </body>
 </html>
