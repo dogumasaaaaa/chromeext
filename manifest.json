@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "Video to Koofr Uploader",
+  "version": "1.0",
+  "description": "Detects playing videos and uploads them directly to Koofr WebDAV.",
+  "permissions": [
+    "webRequest",
+    "declarativeNetRequest",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "https://app.koofr.net/"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
