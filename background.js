@@ -18,30 +18,45 @@ chrome.webRequest.onBeforeRequest.addListener(
 
     if (details.type === "media" || videoRegex.test(details.url)) {
       let urlObj = new URL(details.url);
+      let segments = urlObj.pathname.split('/').filter(Boolean);
       
-      // Determine a proper filename
-      let filename = urlObj.pathname.split('/').pop().split('?')[0] || `video_${Date.now()}`;
-      
-      // If it's an m3u8 playlist, change the save extension to .mp4 for storage
-      if (filename.endsWith('.m3u8')) {
-        filename = filename.replace('.m3u8', '.mp4');
-      } else if (!filename.includes('.')) {
-        filename += '.mp4';
+      // Default fallback name using a timestamp
+      let uniqueName = `video_${Date.now()}`;
+
+      // Smart Name Extraction: 
+      // If the URL looks like /v2/gifs/elementarypreciousmosasaur/hd.m3u8
+      // We grab 'elementarypreciousmosasaur' and combine it with 'hd'
+      if (segments.length >= 2) {
+        let quality = segments[segments.length - 1].split('.')[0]; // 'hd' or 'sd'
+        let id = segments[segments.length - 2]; // 'elementarypreciousmosasaur'
+        
+        // Check if the parent segment looks like a unique ID string rather than a generic API path
+        if (id !== 'gifs' && id !== 'v2' && id !== 'videos') {
+          uniqueName = `${id}_${quality}_${Date.now()}`;
+        } else {
+          uniqueName = `${segments[segments.length - 1].split('.')[0]}_${Date.now()}`;
+        }
       }
+
+      // Finalize the filename configuration
+      let filename = `${uniqueName}.mp4`;
 
       lastDetectedVideo = {
         url: details.url,
         filename: decodeURIComponent(filename)
       };
 
-      console.log("Target Found:", details.url);
+      console.log("Unique Target Found:", filename);
 
-      chrome.runtime.sendMessage({ action: "videoDetected", data: lastDetectedVideo }).catch(() => {});
+      chrome.runtime.sendMessage({ action: "videoDetected", data: lastDetectedVideo }).catch(() => {
+        // Suppress errors when popup UI is closed
+      });
     }
   },
   { urls: ["<all_urls>"] }
 );
 
+// Handle messaging from popup.js
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "getLastVideo") {
     sendResponse(lastDetectedVideo);
@@ -127,7 +142,7 @@ async function uploadDirectFile(videoUrl, filename) {
   }
 }
 
-// Pushes completed chunks/blobs up to Koofr root
+// Pushes completed chunks/blobs up to Koofr root via WebDAV
 async function uploadBlobToKoofr(blob, filename) {
   const destinationUrl = `${KOOFR_WEBDAV_URL}/${encodeURIComponent(filename)}`;
   
