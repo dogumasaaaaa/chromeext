@@ -3,26 +3,36 @@ document.addEventListener("DOMContentLoaded", () => {
   const videoInfo = document.getElementById("video-info");
   const filenameSpan = document.getElementById("filename");
   const uploadBtn = document.getElementById("upload-btn");
+  const progressContainer = document.getElementById("progress-container");
+  const progressBar = document.getElementById("progress-bar");
+  const progressText = document.getElementById("progress-text");
 
   let activeVideo = null;
 
-  // Ask background script for the latest intercepted video
   chrome.runtime.sendMessage({ action: "getLastVideo" }, (response) => {
-    if (response) {
-      displayVideo(response);
-    }
+    if (response) displayVideo(response);
   });
 
-  // Listen for real-time updates if the user keeps the popup open while a video plays
   chrome.runtime.onMessage.addListener((message) => {
     if (message.action === "videoDetected") {
       displayVideo(message.data);
+    }
+    if (message.action === "uploadProgress") {
+      progressContainer.style.display = "block";
+      progressBar.style.width = `${message.percent}%`;
+      progressText.innerText = `${message.step}: ${message.percent}%`;
+      statusDiv.innerText = message.statusMsg || "Processing...";
+    }
+    if (message.action === "uploadComplete") {
+      statusDiv.innerText = "Upload Complete!";
+      uploadBtn.disabled = false;
+      setTimeout(() => { progressContainer.style.display = "none"; }, 2000);
     }
   });
 
   function displayVideo(video) {
     activeVideo = video;
-    statusDiv.innerText = "Video Stream Captured!";
+    statusDiv.innerText = "Video Stream Intercepted!";
     videoInfo.style.display = "block";
     filenameSpan.innerText = video.filename;
     uploadBtn.disabled = false;
@@ -30,8 +40,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   uploadBtn.addEventListener("click", () => {
     if (activeVideo) {
-      statusDiv.innerText = "Uploading straight to Koofr... you can close this popup.";
       uploadBtn.disabled = true;
+      progressContainer.style.display = "block";
       chrome.runtime.sendMessage({
         action: "uploadToKoofr",
         url: activeVideo.url,
