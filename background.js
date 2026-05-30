@@ -1,7 +1,7 @@
 // Hardcoded Credentials
 const KOOFR_EMAIL = "lo.t.st.upidk.aely@gmail.com";
 const KOOFR_PASS = "2eio48c7cr7akj6b"; 
-const KOOFR_WEBDAV_URL = "https://app.koofr.net/dav/Koofr";
+const KOOFR_WEBDAV_URL = "https://app.koofr.net/dav/Koofr/"; // Fixed: Added trailing slash for WebDAV compliance
 
 const authHeader = "Basic " + btoa(KOOFR_EMAIL + ":" + KOOFR_PASS);
 let lastDetectedVideo = null;
@@ -62,7 +62,7 @@ async function handleVideoProcessing(videoUrl, filename) {
   }
 }
 
-// HLS Compiler with Authentication inheritance
+// HLS Compiler
 async function downloadAndAssembleHLS(playlistUrl, filename) {
   try {
     const response = await fetch(playlistUrl, { credentials: "include" });
@@ -84,7 +84,6 @@ async function downloadAndAssembleHLS(playlistUrl, filename) {
     
     const chunkBuffers = [];
     for (let i = 0; i < segmentUrls.length; i++) {
-      // Include session info for every data chunk requested
       const segResponse = await fetch(segmentUrls[i], { credentials: "include" });
       if (!segResponse.ok) throw new Error(`Chunk validation error at chunk ${i + 1}`);
       
@@ -106,12 +105,11 @@ async function downloadAndAssembleHLS(playlistUrl, filename) {
   }
 }
 
-// Authenticated Direct Downloader
+// Direct Downloader
 async function uploadDirectFile(videoUrl, filename) {
   try {
     sendProgress("Downloading", 10, "Fetching secured video data...");
     
-    // Explicitly add credentials payload parameter to borrow active site cookie rules
     const response = await fetch(videoUrl, { 
       method: "GET",
       credentials: "include" 
@@ -130,19 +128,28 @@ async function uploadDirectFile(videoUrl, filename) {
   }
 }
 
+// Fixed WebDAV Direct Uploader Engine
 async function uploadBlobToKoofr(blob, filename) {
-  const destinationUrl = `${KOOFR_WEBDAV_URL}/${encodeURIComponent(filename)}`;
+  const destinationUrl = `${KOOFR_WEBDAV_URL}${encodeURIComponent(filename)}`;
   sendProgress("Uploading to Cloud", 20, "Initiating handshake...");
 
   try {
+    // We add an explicit Controller signal to catch unhandled platform timeouts
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 seconds timeout guard
+
     const uploadResponse = await fetch(destinationUrl, {
       method: "PUT",
       headers: {
         "Authorization": authHeader,
-        "Content-Type": "video/mp4"
+        "Content-Type": "video/mp4",
+        "Content-Length": blob.size.toString() // Explicitly state package size to bypass proxy filters
       },
-      body: blob
+      body: blob,
+      signal: controller.signal
     });
+
+    clearTimeout(timeoutId);
 
     if (uploadResponse.ok || uploadResponse.status === 201) {
       sendProgress("Uploading to Cloud", 100, "Finalized.");
@@ -152,7 +159,8 @@ async function uploadBlobToKoofr(blob, filename) {
       throw new Error(`WebDAV Rejection Code: ${uploadResponse.status}`);
     }
   } catch (e) {
-    sendProgress("Error", 0, e.message);
+    let errorMsg = e.name === 'AbortError' ? "Upload timed out by network constraints." : e.message;
+    sendProgress("Error", 0, errorMsg);
   }
 }
 
