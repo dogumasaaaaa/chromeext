@@ -1,23 +1,27 @@
-// Hardcoded Credentials (Replace the password with an App Password for safety!)
+// Hardcoded Credentials
 const KOOFR_EMAIL = "lo.t.st.upidk.aely@gmail.com";
 const KOOFR_PASS = "2eio48c7cr7akj6b"; 
 const KOOFR_WEBDAV_URL = "https://app.koofr.net/dav/Koofr";
 
-// Generate Basic Auth Header
 const authHeader = "Basic " + btoa(KOOFR_EMAIL + ":" + KOOFR_PASS);
-
 let lastDetectedVideo = null;
 
-// Listen for network requests that match common video formats
+// An aggressive regular expression to match videos (even with query parameters)
+const videoRegex = /\.(mp4|mkv|webm|mov|avi|mp3|m4a|ts)(\?.*)?$/i;
+
 chrome.webRequest.onBeforeRequest.addListener(
   function(details) {
-    if (details.type === "media" || details.url.match(/\.(mp4|mkv|webm|mov|avi)(\?.*)?$/i)) {
-      // Avoid loops if we are the ones fetching the video
-      if (details.initiator && details.initiator.includes(chrome.runtime.id)) return;
+    // Ignore internal extension requests
+    if (details.initiator && details.initiator.includes(chrome.runtime.id)) return;
 
-      // Extract a clean filename or fallback to a timestamp
+    // Check if type is media, or if the URL clearly points to a video file extension
+    if (details.type === "media" || videoRegex.test(details.url)) {
+      
       let urlObj = new URL(details.url);
       let filename = urlObj.pathname.split('/').pop() || `video_${Date.now()}.mp4`;
+      
+      // Clean up filename from query strings if any
+      filename = filename.split('?')[0];
       if (!filename.includes('.')) filename += '.mp4';
 
       lastDetectedVideo = {
@@ -25,16 +29,18 @@ chrome.webRequest.onBeforeRequest.addListener(
         filename: decodeURIComponent(filename)
       };
 
-      // Notify the popup if it's currently open
+      console.log("Captured Video URL:", details.url);
+
+      // Instantly notify popup if it's active
       chrome.runtime.sendMessage({ action: "videoDetected", data: lastDetectedVideo }).catch(() => {
-        // Dynamic catch to ignore errors when popup is closed
+        // Suppress errors when popup UI is closed
       });
     }
   },
-  { urls: ["<all_urls>"] }
+  { urls: ["<all_urls>"] } // Listen to all traffic
 );
 
-// Handle communication from the popup UI
+// Handle messaging
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "getLastVideo") {
     sendResponse(lastDetectedVideo);
@@ -42,21 +48,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.action === "uploadToKoofr") {
     uploadVideoToKoofr(message.url, message.filename);
-    sendResponse({ status: "Starting upload..." });
+    sendResponse({ status: "Starting..." });
   }
 });
 
-// Fetch video and pipe it straight to Koofr via WebDAV PUT
+// WebDAV Direct Upload Logic
 async function uploadVideoToKoofr(videoUrl, filename) {
   try {
-    console.log(`Fetching video from: ${videoUrl}`);
     const response = await fetch(videoUrl);
-    if (!response.ok) throw new Error("Failed to fetch video source.");
+    if (!response.ok) throw new Error("Failed to fetch target video data.");
     
     const videoBlob = await response.blob();
     const destinationUrl = `${KOOFR_WEBDAV_URL}/${encodeURIComponent(filename)}`;
 
-    console.log(`Uploading to Koofr root as: ${filename}`);
     const uploadResponse = await fetch(destinationUrl, {
       method: "PUT",
       headers: {
@@ -67,22 +71,11 @@ async function uploadVideoToKoofr(videoUrl, filename) {
     });
 
     if (uploadResponse.ok || uploadResponse.status === 201) {
-      chrome.notifications.create({
-        type: 'basic',
-        iconUrl: 'icon.png', // Fallback to a default if you add an icon later
-        title: 'Koofr Upload Success',
-        message: `${filename} saved successfully to your root directory!`
-      });
+      console.log("Uploaded successfully!");
     } else {
-      throw new Error(`WebDAV server responded with status ${uploadResponse.status}`);
+      throw new Error(`WebDAV Error: ${uploadResponse.status}`);
     }
   } catch (error) {
     console.error("Upload failed:", error);
-    chrome.notifications.create({
-      type: 'basic',
-      iconUrl: 'icon.png',
-      title: 'Koofr Upload Failed',
-      message: error.message
-    });
   }
 }
