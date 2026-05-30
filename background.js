@@ -6,76 +6,152 @@ const KOOFR_WEBDAV_URL = "https://app.koofr.net/dav/Koofr";
 const authHeader = "Basic " + btoa(KOOFR_EMAIL + ":" + KOOFR_PASS);
 let lastDetectedVideo = null;
 
-// An aggressive regular expression to match videos (even with query parameters)
-const videoRegex = /\.(mp4|mkv|webm|mov|avi|mp3|m4a|ts)(\?.*)?$/i;
+// Catch both direct video files AND m3u8 streaming playlist manifests
+const videoRegex = /\.(mp4|mkv|webm|mov|avi|m3u8)(\?.*)?$/i;
 
 chrome.webRequest.onBeforeRequest.addListener(
   function(details) {
-    // Ignore internal extension requests
     if (details.initiator && details.initiator.includes(chrome.runtime.id)) return;
 
-    // Check if type is media, or if the URL clearly points to a video file extension
+    // Filter out obvious advertisement domain patterns to avoid picking up ads
+    if (details.url.includes("ads") || details.url.includes("popunder") || details.url.includes("analytics")) return;
+
     if (details.type === "media" || videoRegex.test(details.url)) {
-      
       let urlObj = new URL(details.url);
-      let filename = urlObj.pathname.split('/').pop() || `video_${Date.now()}.mp4`;
       
-      // Clean up filename from query strings if any
-      filename = filename.split('?')[0];
-      if (!filename.includes('.')) filename += '.mp4';
+      // Determine a proper filename
+      let filename = urlObj.pathname.split('/').pop().split('?')[0] || `video_${Date.now()}`;
+      
+      // If it's an m3u8 playlist, change the save extension to .mp4 for storage
+      if (filename.endsWith('.m3u8')) {
+        filename = filename.replace('.m3u8', '.mp4');
+      } else if (!filename.includes('.')) {
+        filename += '.mp4';
+      }
 
       lastDetectedVideo = {
         url: details.url,
         filename: decodeURIComponent(filename)
       };
 
-      console.log("Captured Video URL:", details.url);
+      console.log("Target Found:", details.url);
 
-      // Instantly notify popup if it's active
-      chrome.runtime.sendMessage({ action: "videoDetected", data: lastDetectedVideo }).catch(() => {
-        // Suppress errors when popup UI is closed
-      });
+      chrome.runtime.sendMessage({ action: "videoDetected", data: lastDetectedVideo }).catch(() => {});
     }
   },
-  { urls: ["<all_urls>"] } // Listen to all traffic
+  { urls: ["<all_urls>"] }
 );
 
-// Handle messaging
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === "getLastVideo") {
     sendResponse(lastDetectedVideo);
   } 
-  
   if (message.action === "uploadToKoofr") {
-    uploadVideoToKoofr(message.url, message.filename);
-    sendResponse({ status: "Starting..." });
+    handleVideoProcessing(message.url, message.filename);
+    sendResponse({ status: "Processing..." });
   }
 });
 
-// WebDAV Direct Upload Logic
-async function uploadVideoToKoofr(videoUrl, filename) {
+// Route the execution based on whether it is a standard video link or an HLS playlist
+async function handleVideoProcessing(videoUrl, filename) {
+  if (videoUrl.includes('.m3u8')) {
+    console.log("HLS stream detected. Starting segment compilation...");
+    await downloadAndAssembleHLS(videoUrl, filename);
+  } else {
+    console.log("Direct file stream detected. Processing direct upload...");
+    await uploadDirectFile(videoUrl, filename);
+  }
+}
+
+// HLS Stream Assembler Engine
+async function downloadAndAssembleHLS(playlistUrl, filename) {
+  try {
+    // 1. Fetch the text manifest file
+    const response = await fetch(playlistUrl);
+    if (!response.ok) throw new Error("Failed to grab stream playlist data.");
+    const text = await response.text();
+
+    // 2. Parse out the segment links
+    const baseUrl = playlistUrl.substring(0, playlistUrl.lastIndexOf("/") + 1);
+    const lines = text.split("\n");
+    const segmentUrls = [];
+
+    for (let line of lines) {
+      line = line.trim();
+      if (line && !line.startsWith("#")) {
+        // Construct absolute URLs for segments if they are relative paths
+        if (line.startsWith("http://") || line.startsWith("https://")) {
+          segmentUrls.push(line);
+        } else {
+          segmentUrls.push(baseUrl + line);
+        }
+      }
+    }
+
+    if (segmentUrls.length === 0) throw new Error("No video data payload sections found in manifest.");
+    console.log(`Compiling ${segmentUrls.length} video chunks...`);
+
+    // 3. Sequentially download every binary segment chunk
+    const chunkBuffers = [];
+    for (let i = 0; i < segmentUrls.length; i++) {
+      console.log(`Downloading chunk ${i + 1}/${segmentUrls.length}`);
+      const segResponse = await fetch(segmentUrls[i]);
+      if (segResponse.ok) {
+        const buffer = await segResponse.arrayBuffer();
+        chunkBuffers.push(buffer);
+      }
+    }
+
+    // 4. Merge all arrays into one cohesive binary video blob
+    const finalBlob = new Blob(chunkBuffers, { type: "video/mp4" });
+    console.log("Video compilation successful. Pushing to Koofr...");
+    
+    await uploadBlobToKoofr(finalBlob, filename);
+
+  } catch (err) {
+    console.error("HLS compilation routine encountered an issue:", err);
+    showNotification("Compilation Failed", err.message);
+  }
+}
+
+// Standard file downloader handler
+async function uploadDirectFile(videoUrl, filename) {
   try {
     const response = await fetch(videoUrl);
-    if (!response.ok) throw new Error("Failed to fetch target video data.");
-    
-    const videoBlob = await response.blob();
-    const destinationUrl = `${KOOFR_WEBDAV_URL}/${encodeURIComponent(filename)}`;
-
-    const uploadResponse = await fetch(destinationUrl, {
-      method: "PUT",
-      headers: {
-        "Authorization": authHeader,
-        "Content-Type": videoBlob.type || "application/octet-stream"
-      },
-      body: videoBlob
-    });
-
-    if (uploadResponse.ok || uploadResponse.status === 201) {
-      console.log("Uploaded successfully!");
-    } else {
-      throw new Error(`WebDAV Error: ${uploadResponse.status}`);
-    }
-  } catch (error) {
-    console.error("Upload failed:", error);
+    if (!response.ok) throw new Error("Resource unreachable.");
+    const blob = await response.blob();
+    await uploadBlobToKoofr(blob, filename);
+  } catch (err) {
+    console.error(err);
+    showNotification("Direct Upload Failed", err.message);
   }
+}
+
+// Pushes completed chunks/blobs up to Koofr root
+async function uploadBlobToKoofr(blob, filename) {
+  const destinationUrl = `${KOOFR_WEBDAV_URL}/${encodeURIComponent(filename)}`;
+  
+  const uploadResponse = await fetch(destinationUrl, {
+    method: "PUT",
+    headers: {
+      "Authorization": authHeader,
+      "Content-Type": "video/mp4"
+    },
+    body: blob
+  });
+
+  if (uploadResponse.ok || uploadResponse.status === 201) {
+    showNotification("Success!", `${filename} compiled and sent to Koofr.`);
+  } else {
+    showNotification("WebDAV Rejection", `Server status response code: ${uploadResponse.status}`);
+  }
+}
+
+function showNotification(title, message) {
+  chrome.notifications.create({
+    type: 'basic',
+    iconUrl: 'icon.png',
+    title: title,
+    message: message
+  }).catch(() => {});
 }
