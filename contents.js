@@ -1,82 +1,133 @@
-let detectedStreamUrl = null;
+// Inject network interceptor directly into the webpage window context
+const interceptScript = document.createElement('script');
+interceptScript.textContent = `
+  (function() {
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+      const url = args[0];
+      if (typeof url === 'string' && (url.includes('.m3u8') || url.includes('.mp4'))) {
+        window.dispatchEvent(new CustomEvent('VideoGrabberStreamFound', { detail: url }));
+      }
+      return originalFetch.apply(this, args);
+    };
 
-// Listen for stream URLs caught by the background sniffer
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "M3U8_DETECTED") {
-    detectedStreamUrl = message.url;
-    injectFloatingButton();
-  }
+    const originalOpen = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function(method, url) {
+      if (typeof url === 'string' && (url.includes('.m3u8') || url.includes('.mp4'))) {
+        window.dispatchEvent(new CustomEvent('VideoGrabberStreamFound', { detail: url }));
+      }
+      return originalOpen.apply(this, arguments);
+    };
+  })();
+`;
+document.documentElement.appendChild(interceptScript);
+interceptScript.remove();
+
+let latestStreamUrl = null;
+
+// Catch stream URLs broadcasted from our injected interceptor script
+window.addEventListener('VideoGrabberStreamFound', (e) => {
+  latestStreamUrl = e.detail;
+  injectFloatingButton();
 });
 
 function injectFloatingButton() {
-  // Find visible video players on the page
-  const videoElements = document.querySelectorAll("video");
+  // Target video tags, or video wrapper elements
+  const videoElements = document.querySelectorAll("video, .video-stream, .html5-main-video");
   
   videoElements.forEach((video) => {
-    // Prevent duplicate button injections
-    if (video.parentElement.querySelector(".idm-webdav-bar")) return;
+    // Find the closest relative parent container so the button overlays neatly
+    let parent = video.parentElement;
+    if (!parent) return;
 
-    // Create floating rectangular bar
+    // Avoid duplicating the button overlay
+    if (parent.querySelector(".idm-webdav-bar")) return;
+
     const bar = document.createElement("div");
     bar.className = "idm-webdav-bar";
-    bar.innerText = "📥 Save Video to WebDAV";
+    bar.innerHTML = `<span style="margin-right:6px;">📥</span> Save Video to WebDAV`;
     
-    // Style the bar to sit neatly on top of the video player
+    // Industrial grade IDM-style layout properties
     Object.assign(bar.style, {
       position: "absolute",
-      top: "10px",
-      right: "10px",
-      zIndex: "2147483647", // Max z-index to stay on top of controls
+      top: "12px",
+      right: "12px",
+      zIndex: "2147483647", 
       backgroundColor: "#1e88e5",
       color: "white",
-      padding: "8px 12px",
+      padding: "8px 14px",
       borderRadius: "4px",
       cursor: "pointer",
       fontWeight: "bold",
       fontSize: "13px",
-      fontFamily: "Arial, sans-serif",
-      boxShadow: "0px 2px 5px rgba(0,0,0,0.3)",
-      transition: "background-color 0.2s"
+      fontFamily: "Segoe UI, Arial, sans-serif",
+      boxShadow: "0px 3px 6px rgba(0,0,0,0.4)",
+      display: "flex",
+      alignItems: "center",
+      userSelect: "none",
+      pointerEvents: "auto",
+      transition: "transform 0.1s, background-color 0.2s"
     });
 
-    bar.addEventListener("mouseover", () => bar.style.backgroundColor = "#1565c0");
-    bar.addEventListener("mouseout", () => bar.style.backgroundColor = "#1e88e5");
+    bar.addEventListener("mouseover", () => {
+      bar.style.backgroundColor = "#1565c0";
+      bar.style.transform = "scale(1.03)";
+    });
+    bar.addEventListener("mouseout", () => {
+      bar.style.backgroundColor = "#1e88e5";
+      bar.style.transform = "scale(1)";
+    });
 
-    // Click handler to trigger background upload
     bar.addEventListener("click", (e) => {
       e.stopPropagation();
       e.preventDefault();
       
-      const targetUrl = detectedStreamUrl || video.src;
-      if (!targetUrl) {
-        alert("Could not extract video source URL yet.");
+      const downloadTarget = latestStreamUrl || video.src || video.currentSrc;
+      if (!downloadTarget || downloadTarget.startsWith('blob:')) {
+        // Fallback trace to look for media page sources
+        const sourceTag = video.querySelector('source');
+        if (sourceTag && sourceTag.src) {
+          triggerUpload(sourceTag.src, bar);
+        } else {
+          bar.innerText = "⚠ Stream URL Lost";
+          setTimeout(() => { bar.innerHTML = `<span>📥</span> Save Video to WebDAV`; }, 2000);
+        }
         return;
       }
 
-      bar.innerText = "⏳ Uploading...";
-      bar.style.backgroundColor = "#ffb300";
-
-      chrome.runtime.sendMessage({ type: "UPLOAD_TO_WEBDAV", videoUrl: targetUrl }, (response) => {
-        if (response && response.success) {
-          bar.innerText = "✅ Saved to Koofr!";
-          bar.style.backgroundColor = "#4caf50";
-          setTimeout(() => { bar.innerText = "📥 Save Video to WebDAV"; bar.style.backgroundColor = "#1e88e5"; }, 4000);
-        } else {
-          bar.innerText = "❌ Upload Failed";
-          bar.style.backgroundColor = "#f44336";
-          console.error(response?.error);
-          setTimeout(() => { bar.innerText = "📥 Save Video to WebDAV"; bar.style.backgroundColor = "#1e88e5"; }, 4000);
-        }
-      });
+      triggerUpload(downloadTarget, bar);
     });
 
-    // Handle relative positioning context for absolute button positioning
-    if (window.getComputedStyle(video.parentElement).position === "static") {
-      video.parentElement.style.position = "relative";
+    // Make sure container has a position boundary context
+    if (window.getComputedStyle(parent).position === "static") {
+      parent.style.position = "relative";
     }
-    video.parentElement.appendChild(bar);
+    parent.appendChild(bar);
   });
 }
 
-// Continually poll the DOM for dynamically loaded video elements (AJAX/Single Page Apps)
-setInterval(injectFloatingButton, 2000);
+function triggerUpload(url, element) {
+  element.innerText = "⏳ Uploading to Koofr...";
+  element.style.backgroundColor = "#ffb300";
+
+  chrome.runtime.sendMessage({ type: "UPLOAD_TO_WEBDAV", videoUrl: url }, (response) => {
+    if (response && response.success) {
+      element.innerText = "✅ Saved Successfully!";
+      element.style.backgroundColor = "#4caf50";
+      setTimeout(() => { 
+        element.innerHTML = `<span>📥</span> Save Video to WebDAV`; 
+        element.style.backgroundColor = "#1e88e5"; 
+      }, 4000);
+    } else {
+      element.innerText = "❌ Upload Error";
+      element.style.backgroundColor = "#f44336";
+      setTimeout(() => { 
+        element.innerHTML = `<span>📥</span> Save Video to WebDAV`; 
+        element.style.backgroundColor = "#1e88e5"; 
+      }, 4000);
+    }
+  });
+}
+
+// Aggressive DOM scraping to ensure dynamically rendered pages get the button
+setInterval(injectFloatingButton, 1500);
