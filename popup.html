@@ -2,78 +2,47 @@
 <html>
 <head>
   <style>
-    body {
-      width: 320px;
-      font-family: Arial, sans-serif;
-      padding: 12px;
-      margin: 0;
-      background-color: #0c0c0c; /* Amoled Black */
-      color: #ffffff;
-    }
-    h3 { margin-top: 0; color: #00ff66; } /* Accent Green */
-    .video-box {
-      border: 1px solid #222;
-      padding: 10px;
-      border-radius: 6px;
-      background: #121212;
-      word-break: break-all;
-      margin-bottom: 12px;
-      font-size: 12px;
-    }
-    button {
-      width: 100%;
-      background-color: #00ff66;
-      color: #000;
-      border: none;
-      padding: 10px;
-      font-weight: bold;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    button:hover { background-color: #00cc52; }
-    button:disabled { background-color: #333; color: #666; cursor: not-allowed; }
-    
-    /* Progress Bar Styling */
-    .progress-container {
-      margin-top: 12px;
-      display: none;
-    }
-    .progress-track {
-      width: 100%;
-      background-color: #222;
-      border-radius: 4px;
-      overflow: hidden;
-      height: 12px;
-    }
-    .progress-bar {
-      width: 0%;
-      height: 100%;
-      background-color: #00ff66;
-      transition: width 0.1s ease;
-    }
-    .progress-text {
-      font-size: 11px;
-      color: #888;
-      margin-top: 4px;
-      text-align: right;
-    }
+    body { width: 250px; font-family: Arial, sans-serif; padding: 10px; margin: 0; }
+    h3 { margin-top: 0; color: #333; }
+    label { font-size: 11px; color: #666; display: block; margin-top: 8px; }
+    input { width: 100%; padding: 6px; box-sizing: border-box; margin-top: 3px; border: 1px solid #ccc; border-radius: 4px; }
+    button { width: 100%; margin-top: 12px; background: #1e88e5; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    button:hover { background: #1565c0; }
+    .status { font-size: 11px; text-align: center; color: green; margin-top: 5px; }
   </style>
 </head>
 <body>
-  <h3>Koofr Video Grabber</h3>
-  <div id="status">Scanning browser traffic...</div>
+  <h3>WebDAV Settings</h3>
+  <label>Koofr Email Address</label>
+  <input type="text" id="email" placeholder="lo.t.st.upidk..."/>
   
-  <div id="video-info" class="video-box" style="display:none;">
-    <strong>Detected Target:</strong> <span id="filename"></span>
-  </div>
+  <label>App Password</label>
+  <input type="password" id="pass" placeholder="••••••••••••••••"/>
   
-  <button id="upload-btn" disabled>Upload directly to Koofr</button>
+  <button id="saveBtn">Save Credentials</button>
+  <div class="status" id="status"></div>
 
-  <div id="progress-container" class="progress-container">
-    <div class="progress-track"><div id="progress-bar" class="progress-bar"></div></div>
-    <div id="progress-text" class="progress-text">Processing: 0%</div>
-  </div>
+  <script>
+    const emailInput = document.getElementById('email');
+    const passInput = document.getElementById('pass');
+    const saveBtn = document.getElementById('saveBtn');
+    const status = document.getElementById('status');
 
-  <script src="popup.js"></script>
+    // Load saved or display placeholder defaults
+    chrome.storage.local.get(['email', 'appPass'], (res) => {
+      if (res.email) emailInput.value = res.email;
+      if (res.appPass) passInput.value = res.appPass;
+    });
+
+    saveBtn.addEventListener('click', () => {
+      chrome.storage.local.set({
+        email: emailInput.value.trim(),
+        appPass: passInput.value.trim()
+      }, () => {
+        status.innerText = "Credentials saved successfully!";
+        setTimeout(() => status.innerText = "", 2000);
+      });
+    });
+  </script>
 </body>
 </html>
