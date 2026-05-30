@@ -27,9 +27,17 @@
 
   <h3>📥 Koofr Video Grabber</h3>
   
+  <div class="section" style="background: #e8f0fe; padding: 8px; border-radius: 6px; border: 1px solid #b3d4fc;">
+    <label style="font-weight: bold; color: #1e88e5;">Paste Video/M3U8 URL manually:</label>
+    <input type="text" id="manualUrl" placeholder="https://.../hd.m3u8" />
+    <button class="btn" id="manualUploadBtn" style="background: #2e7d32;">🚀 Force Save to Koofr</button>
+    <div class="status" id="manualStatus"></div>
+  </div>
+
   <div class="section">
+    <label style="font-weight: bold;">Auto-Detected Items:</label>
     <div id="videoList">
-      <div class="status info">Scanning page for videos...</div>
+      <div class="status info">Scanning page layout...</div>
     </div>
   </div>
 
