@@ -36,6 +36,8 @@ chrome.webRequest.onBeforeRequest.addListener(
         filename: decodeURIComponent(filename)
       };
 
+      console.log("Unique Target Found:", filename);
+
       chrome.runtime.sendMessage({ action: "videoDetected", data: lastDetectedVideo }).catch(() => {});
     }
   },
@@ -60,11 +62,11 @@ async function handleVideoProcessing(videoUrl, filename) {
   }
 }
 
-// HLS Stream Compiler with Progress Metrics
+// HLS Compiler with Authentication inheritance
 async function downloadAndAssembleHLS(playlistUrl, filename) {
   try {
-    const response = await fetch(playlistUrl);
-    if (!response.ok) throw new Error("Link expired or protected. Refresh page.");
+    const response = await fetch(playlistUrl, { credentials: "include" });
+    if (!response.ok) throw new Error("Server rejected request. Try reloading the video page.");
     const text = await response.text();
 
     const baseUrl = playlistUrl.substring(0, playlistUrl.lastIndexOf("/") + 1);
@@ -78,23 +80,23 @@ async function downloadAndAssembleHLS(playlistUrl, filename) {
       }
     }
 
-    if (segmentUrls.length === 0) throw new Error("No data chunks found.");
+    if (segmentUrls.length === 0) throw new Error("No video segments found.");
     
     const chunkBuffers = [];
     for (let i = 0; i < segmentUrls.length; i++) {
-      const segResponse = await fetch(segmentUrls[i]);
-      if (!segResponse.ok) throw new Error(`Chunk ${i} fetch failure. Token expired.`);
+      // Include session info for every data chunk requested
+      const segResponse = await fetch(segmentUrls[i], { credentials: "include" });
+      if (!segResponse.ok) throw new Error(`Chunk validation error at chunk ${i + 1}`);
       
       const buffer = await segResponse.arrayBuffer();
       chunkBuffers.push(buffer);
 
-      // Send download progress update
       let percent = Math.round(((i + 1) / segmentUrls.length) * 100);
       sendProgress("Downloading", percent, `Fetching segment ${i+1}/${segmentUrls.length}`);
     }
 
     const finalBlob = new Blob(chunkBuffers, { type: "video/mp4" });
-    if (finalBlob.size === 0) throw new Error("Assembled binary structure is empty.");
+    if (finalBlob.size === 0) throw new Error("Assembled binary structural asset is empty.");
 
     await uploadBlobToKoofr(finalBlob, filename);
 
@@ -104,15 +106,21 @@ async function downloadAndAssembleHLS(playlistUrl, filename) {
   }
 }
 
-// Direct File Streamer with Upload Progress Monitoring
+// Authenticated Direct Downloader
 async function uploadDirectFile(videoUrl, filename) {
   try {
-    sendProgress("Downloading", 10, "Fetching remote asset...");
-    const response = await fetch(videoUrl);
-    if (!response.ok) throw new Error("Video stream address invalid or expired.");
+    sendProgress("Downloading", 10, "Fetching secured video data...");
+    
+    // Explicitly add credentials payload parameter to borrow active site cookie rules
+    const response = await fetch(videoUrl, { 
+      method: "GET",
+      credentials: "include" 
+    });
+    
+    if (!response.ok) throw new Error(`Server returned code ${response.status}. Link expired.`);
     
     const blob = await response.blob();
-    if (blob.size === 0) throw new Error("Target file returned zero data payload.");
+    if (blob.size === 0) throw new Error("Target file returned zero data bytes.");
     
     sendProgress("Downloading", 100, "Asset locked in memory.");
     await uploadBlobToKoofr(blob, filename);
@@ -122,7 +130,6 @@ async function uploadDirectFile(videoUrl, filename) {
   }
 }
 
-// WebDAV Direct Uploader
 async function uploadBlobToKoofr(blob, filename) {
   const destinationUrl = `${KOOFR_WEBDAV_URL}/${encodeURIComponent(filename)}`;
   sendProgress("Uploading to Cloud", 20, "Initiating handshake...");
@@ -155,7 +162,7 @@ function sendProgress(step, percent, statusMsg) {
     step: step,
     percent: percent,
     statusMsg: statusMsg
-  }).catch(() => {}); // Catch prevents breaking when popup interface panel closes
+  }).catch(() => {});
 }
 
 function showNotification(title, message) {
